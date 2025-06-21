@@ -4,6 +4,7 @@ import lombok.Data;
 
 @Data
 public class RegionControlRequest {
+    private Long id; // nulo para novos, preenchido para edição
     private String regionCode;
     private String currency;
     private String supplier;
