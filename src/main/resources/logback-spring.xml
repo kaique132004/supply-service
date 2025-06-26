@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true">
+
+    <!-- Diretório base dos logs -->
+    <property name="LOG_PATH" value="logs/auth" />
+    <property name="LOG_PATTERN" value="%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"/>
+
+    <!-- ==== CONSOLE (para debugging em tempo real) ==== -->
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ==== HTTP LOG ==== -->
+    <appender name="HTTP_LOG" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/http.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/http.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>15</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ==== DATABASE LOG ==== -->
+    <appender name="DATABASE_LOG" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/database.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/database.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>15</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ==== RABBITMQ LOG ==== -->
+    <appender name="RABBITMQ_LOG" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/rabbitmq.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/rabbitmq.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>15</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ==== SECURITY LOG ==== -->
+    <appender name="SECURITY_LOG" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/security.log</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
+            <fileNamePattern>${LOG_PATH}/security.%d{yyyy-MM-dd}.log</fileNamePattern>
+            <maxHistory>15</maxHistory>
+        </rollingPolicy>
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <!-- ==== ROOT LOGGER (INFO geral) ==== -->
+    <root level="INFO">
+        <appender-ref ref="CONSOLE" />
+    </root>
+
+    <!-- HTTP: Spring Web -->
+    <logger name="org.springframework.web" level="DEBUG" additivity="false">
+        <appender-ref ref="HTTP_LOG" />
+    </logger>
+
+    <!-- JPA / Hibernate / JDBC -->
+    <logger name="org.hibernate.SQL" level="INFO" additivity="false">
+        <appender-ref ref="DATABASE_LOG" />
+    </logger>
+
+    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE" additivity="false">
+        <appender-ref ref="DATABASE_LOG" />
+    </logger>
+
+    <logger name="org.springframework.jdbc.core" level="DEBUG" additivity="false">
+        <appender-ref ref="DATABASE_LOG" />
+    </logger>
+
+    <!-- RabbitMQ -->
+    <logger name="org.springframework.amqp" level="DEBUG" additivity="false">
+        <appender-ref ref="RABBITMQ_LOG" />
+    </logger>
+
+    <!-- Security -->
+    <logger name="org.springframework.security" level="DEBUG" additivity="false">
+        <appender-ref ref="SECURITY_LOG" />
+    </logger>
+
+    <!-- Sua aplicação -->
+    <logger name="aero.sita.mgt" level="DEBUG" additivity="true">
+        <appender-ref ref="CONSOLE" />
+    </logger>
+
+</configuration>

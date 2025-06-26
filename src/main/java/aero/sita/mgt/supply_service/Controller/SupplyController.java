@@ -29,6 +29,13 @@ public class SupplyController {
 
     private final TransactionService transactionService;
 
+    @Operation(summary = "Get all supplies of database")
+    @GetMapping("/list")
+    public ResponseEntity<List<SupplyResponse>> list() {
+        List<SupplyResponse> list = supplyService.getAllSupply();
+        return ResponseEntity.ok(list);
+    }
+
     @Operation(summary = "Register a supply consumption transaction")
     @ApiResponses({
             @ApiResponse(responseCode = "200", description = "Transação registrada com sucesso"),
