@@ -158,6 +158,10 @@ public class TransactionService {
         return ResponseEntity.ok(responseList);
     }
 
+    public ResponseEntity<?> getAllConsumptions() {
+        return ResponseEntity.ok(transactionRepository.findAll());
+    }
+
     public byte[] getExportUseFilters(TransactionFilter request, String format) {
         ResponseEntity<?> response = getUseFilters(request);
 

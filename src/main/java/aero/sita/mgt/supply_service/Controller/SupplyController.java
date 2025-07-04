@@ -6,6 +6,8 @@ import aero.sita.mgt.supply_service.Services.SupplyService;
 import aero.sita.mgt.supply_service.Services.TransactionService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -48,10 +50,12 @@ public class SupplyController {
     }
 
     @Operation(summary = "List all available supplies")
+    @ApiResponses({
+            @ApiResponse(responseCode = "200", description = "List of movements", content = @Content(schema = @Schema(implementation = TransactionResponse.class))),
+    })
     @GetMapping("/consumptions/list")
-    public ResponseEntity<List<SupplyResponse>> getAllSupply() {
-        List<SupplyResponse> list = supplyService.getAllSupply();
-        return ResponseEntity.ok(list);
+    public ResponseEntity<?> getAllConsumptions() {
+        return transactionService.getAllConsumptions();
     }
 
     @Operation(summary = "Get supply details by ID")
@@ -145,4 +149,5 @@ public class SupplyController {
     public ResponseEntity<?> deleteSupply(@PathVariable Long id) {
         return supplyService.deleteSupply(id);
     }
+
 }
