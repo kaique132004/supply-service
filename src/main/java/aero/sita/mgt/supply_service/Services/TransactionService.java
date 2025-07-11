@@ -1,8 +1,6 @@
 package aero.sita.mgt.supply_service.Services;
 
-import aero.sita.mgt.supply_service.Schemas.DTO.TransactionFilter;
-import aero.sita.mgt.supply_service.Schemas.DTO.TransactionRequest;
-import aero.sita.mgt.supply_service.Schemas.DTO.TransactionResponse;
+import aero.sita.mgt.supply_service.Schemas.DTO.*;
 import aero.sita.mgt.supply_service.Schemas.Entity.*;
 import aero.sita.mgt.supply_service.Schemas.SupplyMapper;
 import lombok.RequiredArgsConstructor;
@@ -14,8 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
-import java.util.List;
-import java.util.Optional;
+import java.util.*;
 import java.util.stream.Stream;
 
 @Service
@@ -23,9 +20,8 @@ import java.util.stream.Stream;
 public class TransactionService {
 
     private final SupplyRepository supplyRepository;
-
-    private final SupplyMapper supplyMapper;
     private final TransactionRepository transactionRepository;
+    private final SupplyMapper supplyMapper;
     private final CSVExportService csvExportService;
     private final ExcelExportService excelExportService;
 
@@ -33,22 +29,19 @@ public class TransactionService {
         SupplyEntity supply = supplyRepository.findById(request.getSupplyId())
                 .orElseThrow(() -> new RuntimeException("Supply not found"));
 
-        RegionControlEntity regionControl = supply.getRegionalPrices().stream()
-                .filter(r -> r.getRegionCode().equalsIgnoreCase(request.getRegionCode().toUpperCase()))
-                .findFirst()
-                .orElseThrow(() -> new RuntimeException("Region not found"));
+        RegionControlEntity regionControl = getRegion(supply, request.getRegionCode());
 
-        int currencyQuantity = regionControl.getQuantity() != null ? regionControl.getQuantity() : 0;
-        double priceUnit = regionControl.getPrice() != null ? regionControl.getPrice() : 0.0;
+        int currencyQuantity = Optional.ofNullable(regionControl.getQuantity()).orElse(0);
+        double priceUnit = Optional.ofNullable(regionControl.getPrice()).orElse(0.0);
 
-        int quantityAfter = request.getTypeEntry().equalsIgnoreCase("IN")
-                ? currencyQuantity + request.getQuantityAmended()
-                : currencyQuantity - request.getQuantityAmended();
+        int delta = calcularDelta(request.getTypeEntry(), request.getQuantityAmended());
+        int quantityAfter = currencyQuantity + delta;
 
-        double totalPrice = request.getTypeEntry().equalsIgnoreCase("OUT")
-                ? currencyQuantity * priceUnit : 0.0;
+        if (quantityAfter < 0) throw new IllegalStateException("Estoque não pode ficar negativo.");
 
-        LocalDateTime createdAt = request.getCreated() != null ? request.getCreated() : LocalDateTime.now();
+        double totalPrice = request.getTypeEntry().equalsIgnoreCase("OUT") ? currencyQuantity * priceUnit : 0.0;
+
+        LocalDateTime createdAt = Optional.ofNullable(request.getCreated()).orElse(LocalDateTime.now());
 
         regionControl.setQuantity(quantityAfter);
         supply.setUpdatedAt(LocalDateTime.now());
@@ -65,96 +58,58 @@ public class TransactionService {
         entity.setCreatedAt(createdAt);
 
         TransactionEntity saved = transactionRepository.save(entity);
-
-        return supplyMapper.toTransactionResponse(saved); // <-- Correto!
+        return supplyMapper.toTransactionResponse(saved);
     }
 
     public ResponseEntity<?> getUseFilters(TransactionFilter request) {
-        String userFilter = request.getUser();
-        String typeFilter = request.getTypeEntry();
-        Integer daysFilter = request.getDateDays();
-        List<String> regions = request.getRegionCodes();
-        String nameFilter = request.getNameSupply();
-        Integer qtnFilter = request.getQuantitySupply();
-        LocalDate startDate = request.getStartDate();
-        LocalDate endDate = request.getEndDate();
-
         List<TransactionEntity> rawResults;
-        boolean onlyDates = startDate != null
-                && endDate != null
-                && userFilter == null
-                && typeFilter == null
-                && daysFilter == null
-                && qtnFilter == null
-                && nameFilter == null
-                && (regions == null || regions.isEmpty());
+        boolean onlyDates = request.getStartDate() != null && request.getEndDate() != null &&
+                request.getUser() == null && request.getTypeEntry() == null &&
+                request.getDateDays() == null && request.getQuantitySupply() == null &&
+                request.getNameSupply() == null &&
+                (request.getRegionCodes() == null || request.getRegionCodes().isEmpty());
 
         if (onlyDates) {
-            LocalDateTime start = startDate.atStartOfDay();
-            LocalDateTime end = endDate.atTime(LocalTime.MAX);
+            LocalDateTime start = request.getStartDate().atStartOfDay();
+            LocalDateTime end = request.getEndDate().atTime(LocalTime.MAX);
             rawResults = transactionRepository.findByCreatedAtBetween(start, end);
         } else {
-            // 2) Senão, carrega tudo e faz filtros via Stream
             rawResults = transactionRepository.findAll();
             Stream<TransactionEntity> stream = rawResults.stream();
 
-            if (userFilter != null && !userFilter.isBlank()) {
-                stream = stream.filter(t -> userFilter.equalsIgnoreCase(t.getUserName()));
-            }
-
-            if (typeFilter != null) {
-                stream = stream.filter(t ->
-                        t.getTypeEntry() == TransactionEntity.TransactionType.valueOf(typeFilter.toUpperCase())
-                );
-            }
-            if (daysFilter != null) {
-                LocalDateTime cutoff = LocalDateTime.now().minusDays(daysFilter);
+            if (request.getUser() != null) stream = stream.filter(t -> request.getUser().equalsIgnoreCase(t.getUserName()));
+            if (request.getTypeEntry() != null) stream = stream.filter(t ->
+                    t.getTypeEntry() == TransactionEntity.TransactionType.valueOf(request.getTypeEntry().toUpperCase()));
+            if (request.getDateDays() != null) {
+                LocalDateTime cutoff = LocalDateTime.now().minusDays(request.getDateDays());
                 stream = stream.filter(t -> t.getCreatedAt().isAfter(cutoff));
             }
-
-            if (startDate != null && endDate != null) {
-                LocalDateTime start = startDate.atStartOfDay();
-                LocalDateTime end = endDate.atTime(LocalTime.MAX);
-                stream = stream.filter(t ->
-                        !t.getCreatedAt().isBefore(start) &&
-                                !t.getCreatedAt().isAfter(end)
-                );
+            if (request.getStartDate() != null && request.getEndDate() != null) {
+                LocalDateTime start = request.getStartDate().atStartOfDay();
+                LocalDateTime end = request.getEndDate().atTime(LocalTime.MAX);
+                stream = stream.filter(t -> !t.getCreatedAt().isBefore(start) && !t.getCreatedAt().isAfter(end));
             }
-
-            if (regions != null && !regions.isEmpty()) {
-                stream = stream.filter(t -> regions.contains(t.getRegionCode()));
+            if (request.getRegionCodes() != null && !request.getRegionCodes().isEmpty()) {
+                stream = stream.filter(t -> request.getRegionCodes().contains(t.getRegionCode()));
             }
-
-            if (nameFilter != null) {
-                Optional<SupplyEntity> s = supplyRepository.findBySupplyName(nameFilter);
-                if (s.isEmpty()) {
-                    return ResponseEntity.badRequest().body("Supply não encontrado.");
-                }
-                Long supplyId = s.get().getId();
-                stream = stream.filter(t -> t.getSupplyId().equals(supplyId));
+            if (request.getNameSupply() != null) {
+                Optional<SupplyEntity> s = supplyRepository.findBySupplyName(request.getNameSupply());
+                if (s.isEmpty()) return ResponseEntity.badRequest().body("Supply não encontrado.");
+                stream = stream.filter(t -> t.getSupplyId().equals(s.get().getId()));
             }
-
-            if (qtnFilter != null) {
-                stream = stream.filter(t -> t.getQuantity().equals(qtnFilter));
+            if (request.getQuantitySupply() != null) {
+                stream = stream.filter(t -> t.getQuantity().equals(request.getQuantitySupply()));
             }
 
             rawResults = stream.toList();
         }
 
-        List<TransactionResponse> responseList = rawResults.stream()
-                .map(tx -> {
-                    TransactionResponse response = supplyMapper.toTransactionResponse(tx);
-
-                    // Preenche o supplyName que não está direto na entidade
-                    String supplyNameResolved = supplyRepository.findById(tx.getSupplyId())
-                            .map(SupplyEntity::getSupplyName)
-                            .orElse("Supply não encontrado");
-                    response.setSupplyName(supplyNameResolved);
-
-                    return response;
-                })
-                .toList();
-
+        List<TransactionResponse> responseList = rawResults.stream().map(tx -> {
+            TransactionResponse response = supplyMapper.toTransactionResponse(tx);
+            response.setSupplyName(supplyRepository.findById(tx.getSupplyId())
+                    .map(SupplyEntity::getSupplyName).orElse("Supply não encontrado"));
+            return response;
+        }).toList();
 
         return ResponseEntity.ok(responseList);
     }
@@ -165,13 +120,9 @@ public class TransactionService {
 
     public byte[] getExportUseFilters(TransactionFilter request, String format) {
         ResponseEntity<?> response = getUseFilters(request);
-
-        if (!response.getStatusCode().is2xxSuccessful() || !(response.getBody() instanceof List<?> list)) {
+        if (!response.getStatusCode().is2xxSuccessful() || !(response.getBody() instanceof List<?> list))
             throw new RuntimeException("Erro ao gerar exportação.");
-        }
-
         List<TransactionResponse> historyList = (List<TransactionResponse>) list;
-
         return switch (format.toLowerCase()) {
             case "csv" -> csvExportService.exportHistoryToCsv(historyList);
             case "xlsx" -> excelExportService.exportHistoryToExcel(historyList);
@@ -180,98 +131,122 @@ public class TransactionService {
     }
 
     @Transactional
-    public TransactionResponse updateTransactionAndRecalculate(Long transactionId, TransactionRequest newRequest) {
-        // 1. Busca a transação existente
-        TransactionEntity original = transactionRepository.findById(transactionId)
+    public TransactionResponse updateTransactionAndRecalculate(Long id, TransactionRequest newRequest) {
+        TransactionEntity original = transactionRepository.findById(id)
                 .orElseThrow(() -> new RuntimeException("Transação não encontrada."));
-
-        // 2. Valida que o contexto (supply + região) não mudou
         if (!original.getSupplyId().equals(newRequest.getSupplyId()) ||
                 !original.getRegionCode().equalsIgnoreCase(newRequest.getRegionCode())) {
             throw new IllegalArgumentException("SupplyId ou RegionCode não podem ser alterados.");
         }
 
-        // 3. Atualiza os dados da transação original
         original.setQuantity(newRequest.getQuantityAmended());
-        original.setCreatedAt(newRequest.getCreated() != null ? newRequest.getCreated() : original.getCreatedAt());
+        original.setCreatedAt(Optional.ofNullable(newRequest.getCreated()).orElse(original.getCreatedAt()));
         original.setTypeEntry(TransactionEntity.TransactionType.valueOf(newRequest.getTypeEntry().toUpperCase()));
 
-        // 4. Calcula os valores anteriores
-        // Busca a última transação anterior à edição (para base de cálculo)
         Optional<TransactionEntity> anterior = transactionRepository
                 .findTopBySupplyIdAndRegionCodeAndCreatedAtBeforeOrderByCreatedAtDesc(
-                        original.getSupplyId(),
-                        original.getRegionCode(),
-                        original.getCreatedAt()
-                );
+                        original.getSupplyId(), original.getRegionCode(), original.getCreatedAt());
 
         int quantityBefore = anterior.map(TransactionEntity::getQuantityAfter).orElse(0);
-        int delta = original.getTypeEntry() == TransactionEntity.TransactionType.IN
-                ? original.getQuantity()
-                : -original.getQuantity();
-
+        int delta = calcularDelta(original.getTypeEntry(), original.getQuantity());
         int quantityAfter = quantityBefore + delta;
+
+        if (quantityAfter < 0) throw new IllegalStateException("Estoque não pode ficar negativo.");
 
         original.setQuantityBefore(quantityBefore);
         original.setQuantityAfter(quantityAfter);
-
         transactionRepository.save(original);
 
-        // 5. Recalcula as transações posteriores
         List<TransactionEntity> posteriores = transactionRepository
                 .findBySupplyIdAndRegionCodeAndCreatedAtAfterOrderByCreatedAtAsc(
-                        original.getSupplyId(),
-                        original.getRegionCode(),
-                        original.getCreatedAt()
-                );
+                        original.getSupplyId(), original.getRegionCode(), original.getCreatedAt());
 
         int cursor = quantityAfter;
         for (TransactionEntity tx : posteriores) {
             tx.setQuantityBefore(cursor);
-
-            int diff = tx.getTypeEntry() == TransactionEntity.TransactionType.IN
-                    ? tx.getQuantity()
-                    : -tx.getQuantity();
-
-            int novoAfter = cursor + diff;
-
+            int novoAfter = cursor + calcularDelta(tx.getTypeEntry(), tx.getQuantity());
             tx.setQuantityAfter(novoAfter);
             cursor = novoAfter;
         }
-
         transactionRepository.saveAll(posteriores);
+
+        atualizarEstoqueFinal(original.getSupplyId(), original.getRegionCode(), cursor);
 
         return supplyMapper.toTransactionResponse(original);
     }
 
+    @Transactional
+    public void deleteAndRecalculate(Long transactionId) {
+        TransactionEntity toDelete = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transação não encontrada"));
+        Long supplyId = toDelete.getSupplyId();
+        String regionCode = toDelete.getRegionCode();
+        LocalDateTime createdAt = toDelete.getCreatedAt();
 
+        Optional<TransactionEntity> anterior = transactionRepository
+                .findTopBySupplyIdAndRegionCodeAndCreatedAtBeforeOrderByCreatedAtDesc(supplyId, regionCode, createdAt);
+        int baseQuantity = anterior.map(TransactionEntity::getQuantityAfter).orElse(0);
 
-    private void recalculateAfter(TransactionEntity fromTx) {
-        List<TransactionEntity> affected = transactionRepository
-                .findBySupplyIdAndRegionCodeAndCreatedAtAfterOrderByCreatedAtAsc(
-                        fromTx.getSupplyId(),
-                        fromTx.getRegionCode(),
-                        fromTx.getCreatedAt()
-                );
+        List<TransactionEntity> posteriores = transactionRepository
+                .findBySupplyIdAndRegionCodeAndCreatedAtAfterOrderByCreatedAtAsc(supplyId, regionCode, createdAt);
 
-        // Começa a partir da transação alterada
-        int runningQuantity = fromTx.getQuantityAfter();
+        transactionRepository.delete(toDelete);
 
-        for (TransactionEntity tx : affected) {
-            int before = runningQuantity;
-            int delta = tx.getTypeEntry() == TransactionEntity.TransactionType.IN
-                    ? tx.getQuantity()
-                    : -tx.getQuantity();
-
-            int after = before + delta;
-
-            tx.setQuantityBefore(before);
+        int cursor = baseQuantity;
+        for (TransactionEntity tx : posteriores) {
+            tx.setQuantityBefore(cursor);
+            int after = cursor + calcularDelta(tx.getTypeEntry(), tx.getQuantity());
             tx.setQuantityAfter(after);
-
-            runningQuantity = after;
+            cursor = after;
         }
 
-        transactionRepository.saveAll(affected);
+        transactionRepository.saveAll(posteriores);
+        atualizarEstoqueFinal(supplyId, regionCode, cursor);
     }
 
+    public ResponseEntity<TransactionResponse> getConsumptionDetails(Long id) {
+        Optional<TransactionEntity> optTx = transactionRepository.findById(id);
+
+        if (optTx.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        TransactionEntity tx = optTx.get();
+        TransactionResponse response = supplyMapper.toTransactionResponse(tx);
+
+        // Preenche o nome do supply manualmente
+        String supplyName = supplyRepository.findById(tx.getSupplyId())
+                .map(SupplyEntity::getSupplyName)
+                .orElse("Supply não encontrado");
+
+        response.setSupplyName(supplyName);
+        response.setSupplyId(tx.getSupplyId());
+
+        return ResponseEntity.ok(response);
+    }
+
+
+    private RegionControlEntity getRegion(SupplyEntity supply, String regionCode) {
+        return supply.getRegionalPrices().stream()
+                .filter(r -> r.getRegionCode().equalsIgnoreCase(regionCode))
+                .findFirst()
+                .orElseThrow(() -> new RuntimeException("Região não encontrada"));
+    }
+
+    private int calcularDelta(TransactionEntity.TransactionType type, int quantity) {
+        return type == TransactionEntity.TransactionType.IN ? quantity : -quantity;
+    }
+
+    private int calcularDelta(String type, int quantity) {
+        return "IN".equalsIgnoreCase(type) ? quantity : -quantity;
+    }
+
+    private void atualizarEstoqueFinal(Long supplyId, String regionCode, int quantityFinal) {
+        SupplyEntity supply = supplyRepository.findById(supplyId)
+                .orElseThrow(() -> new RuntimeException("Supply não encontrado"));
+        RegionControlEntity region = getRegion(supply, regionCode);
+        region.setQuantity(quantityFinal);
+        supply.setUpdatedAt(LocalDateTime.now());
+        supplyRepository.save(supply);
+    }
 }

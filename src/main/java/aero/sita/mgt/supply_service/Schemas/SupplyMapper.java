@@ -47,5 +47,7 @@ public interface SupplyMapper {
     @Mapping(target = "supplyName", ignore = true) // Será preenchido manualmente após
     @Mapping(source = "createdAt", target = "created")
     @Mapping(source = "quantity", target = "quantityAmended")
+    @Mapping(source = "supplyId", target = "supplyId", ignore = true) // ✅ mapeia explicitamente
     TransactionResponse toTransactionResponse(TransactionEntity entity);
+
 }

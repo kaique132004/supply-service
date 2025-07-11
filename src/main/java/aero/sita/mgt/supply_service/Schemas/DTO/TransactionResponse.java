@@ -7,6 +7,7 @@ import java.time.LocalDateTime;
 @Data
 public class TransactionResponse {
     private Long id;
+    private Long supplyId;
     private String userName;
     private String supplyName;
     private Integer quantityAmended;

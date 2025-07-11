@@ -25,4 +25,7 @@ public interface TransactionRepository extends JpaRepository<TransactionEntity, 
     List<TransactionEntity> findBySupplyIdAndRegionCodeAndCreatedAtAfterOrderByCreatedAtAsc(
             Long supplyId, String regionCode, LocalDateTime createdAt);
 
+    Optional<TransactionEntity> findById(Long id);
+
+
 }

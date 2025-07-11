@@ -12,6 +12,7 @@ import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -19,6 +20,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.util.List;
 
 @RestController
@@ -151,11 +153,23 @@ public class SupplyController {
     }
 
 
-    @PutMapping("/transactions/{id}/edit")
+    @PutMapping("/consumptions/{id}/edit")
     public ResponseEntity<TransactionResponse> editTransaction(
             @PathVariable Long id,
             @RequestBody TransactionRequest request
     ) {
         return ResponseEntity.ok(transactionService.updateTransactionAndRecalculate(id, request));
     }
+
+    @DeleteMapping("/consumptions/{id}")
+    public ResponseEntity<?> deleteTransaction(@PathVariable Long id) {
+        transactionService.deleteAndRecalculate(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/consumptions/{id}")
+    public ResponseEntity<TransactionResponse> getConsumptionDetails(@PathVariable Long id) {
+        return transactionService.getConsumptionDetails(id);
+    }
+
 }
