@@ -150,4 +150,12 @@ public class SupplyController {
         return supplyService.deleteSupply(id);
     }
 
+
+    @PutMapping("/transactions/{id}/edit")
+    public ResponseEntity<TransactionResponse> editTransaction(
+            @PathVariable Long id,
+            @RequestBody TransactionRequest request
+    ) {
+        return ResponseEntity.ok(transactionService.updateTransactionAndRecalculate(id, request));
+    }
 }

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Repository;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface TransactionRepository extends JpaRepository<TransactionEntity, Long> {
@@ -17,4 +18,11 @@ public interface TransactionRepository extends JpaRepository<TransactionEntity, 
 
 
     List<TransactionEntity> findByCreatedAtBetween(LocalDateTime start, LocalDateTime end);
+
+    Optional<TransactionEntity> findTopBySupplyIdAndRegionCodeAndCreatedAtBeforeOrderByCreatedAtDesc(
+            Long supplyId, String regionCode, LocalDateTime createdAt);
+
+    List<TransactionEntity> findBySupplyIdAndRegionCodeAndCreatedAtAfterOrderByCreatedAtAsc(
+            Long supplyId, String regionCode, LocalDateTime createdAt);
+
 }

@@ -23,9 +23,12 @@ public class CorsConfig {
     public CorsFilter corsFilter() {
         List<String> allowedOrigins = new ArrayList<>();
         for (String host : corsProperties.getFrontend()) {
+            allowedOrigins.add("https://" + host);
+            allowedOrigins.add("http://" + host);
+
             for (Integer port : corsProperties.getFrontendPorts()) {
-                allowedOrigins.add("http://" + host + ":" + port);
                 allowedOrigins.add("https://" + host + ":" + port);
+                allowedOrigins.add("http://" + host + ":" + port);
             }
         }
 

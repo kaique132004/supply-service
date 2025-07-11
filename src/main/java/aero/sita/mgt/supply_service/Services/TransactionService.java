@@ -9,6 +9,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -177,4 +178,100 @@ public class TransactionService {
             default -> throw new IllegalArgumentException("Formato inválido: " + format);
         };
     }
+
+    @Transactional
+    public TransactionResponse updateTransactionAndRecalculate(Long transactionId, TransactionRequest newRequest) {
+        // 1. Busca a transação existente
+        TransactionEntity original = transactionRepository.findById(transactionId)
+                .orElseThrow(() -> new RuntimeException("Transação não encontrada."));
+
+        // 2. Valida que o contexto (supply + região) não mudou
+        if (!original.getSupplyId().equals(newRequest.getSupplyId()) ||
+                !original.getRegionCode().equalsIgnoreCase(newRequest.getRegionCode())) {
+            throw new IllegalArgumentException("SupplyId ou RegionCode não podem ser alterados.");
+        }
+
+        // 3. Atualiza os dados da transação original
+        original.setQuantity(newRequest.getQuantityAmended());
+        original.setCreatedAt(newRequest.getCreated() != null ? newRequest.getCreated() : original.getCreatedAt());
+        original.setTypeEntry(TransactionEntity.TransactionType.valueOf(newRequest.getTypeEntry().toUpperCase()));
+
+        // 4. Calcula os valores anteriores
+        // Busca a última transação anterior à edição (para base de cálculo)
+        Optional<TransactionEntity> anterior = transactionRepository
+                .findTopBySupplyIdAndRegionCodeAndCreatedAtBeforeOrderByCreatedAtDesc(
+                        original.getSupplyId(),
+                        original.getRegionCode(),
+                        original.getCreatedAt()
+                );
+
+        int quantityBefore = anterior.map(TransactionEntity::getQuantityAfter).orElse(0);
+        int delta = original.getTypeEntry() == TransactionEntity.TransactionType.IN
+                ? original.getQuantity()
+                : -original.getQuantity();
+
+        int quantityAfter = quantityBefore + delta;
+
+        original.setQuantityBefore(quantityBefore);
+        original.setQuantityAfter(quantityAfter);
+
+        transactionRepository.save(original);
+
+        // 5. Recalcula as transações posteriores
+        List<TransactionEntity> posteriores = transactionRepository
+                .findBySupplyIdAndRegionCodeAndCreatedAtAfterOrderByCreatedAtAsc(
+                        original.getSupplyId(),
+                        original.getRegionCode(),
+                        original.getCreatedAt()
+                );
+
+        int cursor = quantityAfter;
+        for (TransactionEntity tx : posteriores) {
+            tx.setQuantityBefore(cursor);
+
+            int diff = tx.getTypeEntry() == TransactionEntity.TransactionType.IN
+                    ? tx.getQuantity()
+                    : -tx.getQuantity();
+
+            int novoAfter = cursor + diff;
+
+            tx.setQuantityAfter(novoAfter);
+            cursor = novoAfter;
+        }
+
+        transactionRepository.saveAll(posteriores);
+
+        return supplyMapper.toTransactionResponse(original);
+    }
+
+
+
+    private void recalculateAfter(TransactionEntity fromTx) {
+        List<TransactionEntity> affected = transactionRepository
+                .findBySupplyIdAndRegionCodeAndCreatedAtAfterOrderByCreatedAtAsc(
+                        fromTx.getSupplyId(),
+                        fromTx.getRegionCode(),
+                        fromTx.getCreatedAt()
+                );
+
+        // Começa a partir da transação alterada
+        int runningQuantity = fromTx.getQuantityAfter();
+
+        for (TransactionEntity tx : affected) {
+            int before = runningQuantity;
+            int delta = tx.getTypeEntry() == TransactionEntity.TransactionType.IN
+                    ? tx.getQuantity()
+                    : -tx.getQuantity();
+
+            int after = before + delta;
+
+            tx.setQuantityBefore(before);
+            tx.setQuantityAfter(after);
+
+            runningQuantity = after;
+        }
+
+        transactionRepository.saveAll(affected);
+    }
+
 }
